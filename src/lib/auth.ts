@@ -6,7 +6,9 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
 
   // Allow the Next.js frontend to make credentialed requests
-  trustedOrigins: ['http://localhost:3000'],
+  trustedOrigins: [
+    process.env.FRONTEND_URL!
+    ],
 
   baseURL: process.env.BETTER_AUTH_URL!,
 
