@@ -8,6 +8,8 @@ export const auth = betterAuth({
   // Allow the Next.js frontend to make credentialed requests
   trustedOrigins: ['http://localhost:3000'],
 
+  baseURL: process.env.BETTER_AUTH_URL!,
+
   emailAndPassword: { enabled: true },
 
   // Tell Better Auth's type system that orgId exists on User

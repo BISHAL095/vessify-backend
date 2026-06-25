@@ -10,7 +10,7 @@ type ParsedTransaction = {
 // Each pattern targets a specific sample format
 // Order matters — more specific patterns come first to avoid false matches
 const DATE_PATTERNS = [
-  /Date:\s*(\d{1,2}\s+\w+\s+\d{4})/i,   // Sample 1: "Date: 11 Dec 2025"
+  /Date:\s*(\d{1,2}\s+\w+\s+\d{4})/i,    // Sample 1: "Date: 11 Dec 2025"
   /(\d{2}\/\d{2}\/\d{4})/,               // Sample 2: "12/11/2025"
   /(\d{4}-\d{2}-\d{2})/,                 // Sample 3: "2025-12-10" ISO
 ]
@@ -18,13 +18,13 @@ const DATE_PATTERNS = [
 const AMOUNT_PATTERNS = [
   /Amount:\s*([+-]?[\d,]+\.?\d*)/i,      // Sample 1: "Amount: -420.00"
   /₹([\d,]+\.?\d*)\s+debited/i,          // Sample 2: "₹1,250.00 debited"
-  /₹([\d,]+\.?\d*)\s+Dr/i,              // Sample 3: "₹2,999.00 Dr"
+  /₹([\d,]+\.?\d*)\s+Dr/i,               // Sample 3: "₹2,999.00 Dr"
 ]
 
 const DESC_PATTERNS = [
-  /Description:\s*(.+)/i,                // Sample 1: "Description: STARBUCKS..."
+  /Description:\s*(.+)/i,                                   // Sample 1: "Description: STARBUCKS..."
   /^((?!\d{1,2}\/\d{1,2}\/\d{4}).+?)\n.*?(?:debited|Dr)/im, // Sample 2: description before debit line
-  /(?:txn\S+\s+\S+\s+)(.+?)\s+₹/i,   // Sample 3: text between date and ₹ symbol
+  /(?:txn\S+\s+\S+\s+)(.+?)\s+₹/i,                          // Sample 3: text between date and ₹ symbol
 ]
 
 function parseDate(text: string): { value: Date; found: boolean } {

@@ -1,29 +1,10 @@
 import { Hono } from 'hono'
-import { sign } from 'hono/jwt'
-import { scrypt, randomBytes, timingSafeEqual } from 'crypto'  // Node built-in
-import { promisify } from 'util'
+import { auth } from '../lib/auth.js'
 import { prisma } from '../lib/prisma.js'
-
-const scryptAsync = promisify(scrypt)
-
-// ── Hashing ──────────────────────────────────────────────────
-async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString('hex')          // random 16-byte salt
-  const buf  = await scryptAsync(password, salt, 64) as Buffer
-  return `${salt}:${buf.toString('hex')}`               // store as "salt:hash"
-}
-
-// ── Verification ─────────────────────────────────────────────
-async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [salt, hash] = stored.split(':')
-  const hashBuf    = Buffer.from(hash, 'hex')
-  const inputBuf   = await scryptAsync(password, salt, 64) as Buffer
-  return timingSafeEqual(hashBuf, inputBuf)             // constant-time compare
-}
 
 export const authRouter = new Hono()
 
-// ── REGISTER ──────────────────────────────────────────────────
+// Custom register — Better Auth creates the user, we create the org and link them
 authRouter.post('/register', async (c) => {
   const { email, password, orgName } = await c.req.json()
 
@@ -33,38 +14,44 @@ authRouter.post('/register', async (c) => {
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) return c.json({ error: 'Email already registered' }, 409)
 
-  const passwordHash = await hashPassword(password)
-  const slug = orgName.toLowerCase().replace(/\s+/g, '-')
-
-  const { user, org } = await prisma.$transaction(async (tx) => {
-    const org  = await tx.organization.create({ data: { name: orgName, slug } })
-    const user = await tx.user.create({ data: { email, passwordHash, orgId: org.id } })
-    return { user, org }
+  // Better Auth handles password hashing and Account row creation
+  const response = await auth.api.signUpEmail({
+    body: { email, password, name: email.split('@')[0] },
+    asResponse: true,
   })
 
-  const token = await sign(
-    { sub: user.id, orgId: org.id, email: user.email,
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 },
-    process.env.BETTER_AUTH_SECRET!
-  )
-  return c.json({ token, userId: user.id, orgId: org.id }, 201)
+  if (!response.ok) {
+    const err = await response.json()
+    return c.json({ error: err.message ?? 'Registration failed' }, 400)
+  }
+
+  const result = await response.json()
+  const userId = result.user.id
+
+  const slug = orgName.toLowerCase().replace(/\s+/g, '-')
+
+  // Atomic: create org and attach it to the user — if either fails, both roll back
+  await prisma.$transaction(async (tx) => {
+    const org = await tx.organization.create({
+      data: { name: orgName, slug },
+    })
+    await tx.user.update({
+      where: { id: userId },
+      data: { orgId: org.id },
+    })
+  })
+
+  // Sign in right after register to return a live session
+  const signInResponse = await auth.api.signInEmail({
+    body: { email, password },
+    asResponse: true,
+  })
+
+  if (!signInResponse.ok)
+    return c.json({ error: 'Registered but login failed' }, 500)
+
+  return signInResponse
 })
 
-// ── LOGIN ─────────────────────────────────────────────────────
-authRouter.post('/login', async (c) => {
-  const { email, password } = await c.req.json()
-  const user = await prisma.user.findUnique({ where: { email } })
-
-  // Same error for "not found" and "wrong password" — prevents user enumeration
-  if (!user) return c.json({ error: 'Invalid credentials' }, 401)
-
-  const valid = await verifyPassword(password, user.passwordHash)
-  if (!valid) return c.json({ error: 'Invalid credentials' }, 401)
-
-  const token = await sign(
-    { sub: user.id, orgId: user.orgId, email: user.email,
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 },
-    process.env.BETTER_AUTH_SECRET!
-  )
-  return c.json({ token })
-})
+// Better Auth owns login, session check, sign-out — delegate everything else
+authRouter.on(['POST', 'GET'], '/*', (c) => auth.handler(c.req.raw))

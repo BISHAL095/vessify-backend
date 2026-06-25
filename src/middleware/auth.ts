@@ -1,38 +1,30 @@
 import type { Context, Next } from 'hono'
-import { verify } from 'hono/jwt'
-import type { AppVariables, JWTPayload } from '../types/index.js'
+import { auth } from '../lib/auth.js'
+
+// Shape of values we inject into Hono context for downstream route handlers
+export type AuthVariables = {
+  user: typeof auth.$Infer.Session.user | null
+  session: typeof auth.$Infer.Session.session | null
+}
 
 export async function authMiddleware(
- c: Context<{ Variables: AppVariables }>,
- next: Next
+  c: Context<{ Variables: AuthVariables }>,
+  next: Next
 ) {
- const authHeader = c.req.header('Authorization')
+  // Reads session cookie or Bearer token — returns null if missing or expired
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  })
 
- if (!authHeader?.startsWith('Bearer ')) {
- return c.json({ error: 'Missing token' }, 401)
- }
+  if (!session?.user)
+    return c.json({ error: 'Unauthorized' }, 401)
 
- const token = authHeader.slice(7) // remove "Bearer "
+  // orgId is set during registration — absence means incomplete signup
+  if (!session.user.orgId)
+    return c.json({ error: 'Organization not set up' }, 403)
 
- try {
- const payload = await verify(
- token,
- process.env.BETTER_AUTH_SECRET!,
- 'HS256'
- ) as JWTPayload
-
- // Check expiry explicitly
- if (payload.exp < Date.now() / 1000) {
- return c.json({ error: 'Token expired' }, 401)
- }
-
- // Inject into context — route handlers read these
- c.set('userId', payload.sub)
- c.set('orgId', payload.orgId)
- c.set('email', payload.email)
- 
- await next()
- } catch {
- return c.json({ error: 'Invalid token' }, 401)
- }
+  // Attach to context so route handlers don't need to re-fetch the session
+  c.set('user', session.user)
+  c.set('session', session.session)
+  await next()
 }
