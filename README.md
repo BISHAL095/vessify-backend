@@ -40,11 +40,13 @@ Fill in `.env`:
 DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
 BETTER_AUTH_SECRET="generate-with-openssl-rand-base64-32"
 BETTER_AUTH_URL="http://localhost:3001"
+FRONTEND_URL="http://localhost:3000"
 PORT="3001"
 ```
 
 > Generate a secret: `openssl rand -base64 32`
 
+For Render deployment, set `BETTER_AUTH_URL` to your Render service URL and `FRONTEND_URL` to the deployed Vercel frontend URL.
 ### 3. Push schema to database
 
 ```bash
